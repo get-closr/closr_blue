@@ -1,177 +1,127 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_blue/flutter_blue.dart';
+import 'widgets.dart';
 
-import 'package:closr_blue/widgets.dart';
+void main() => runApp(ClosrBlue());
 
-void main() {
-  runApp(FlutterBlueApp());
+class ClosrBlue extends StatefulWidget {
+  ClosrBlue({Key key}) : super(key: key);
+
+  _ClosrBlueState createState() => _ClosrBlueState();
 }
 
-class FlutterBlueApp extends StatefulWidget {
-  FlutterBlueApp({Key key, this.title}) : super(key: key);
-  final String title;
-
-  _FlutterBlueAppState createState() => _FlutterBlueAppState();
-}
-
-class _FlutterBlueAppState extends State<FlutterBlueApp> {
-  FlutterBlue _flutterBlue = FlutterBlue.instance;
-
-  //Scanning
-  StreamSubscription _scanSubscription;
-  Map<DeviceIdentifier, ScanResult> scanResults = Map();
-  bool isScanning = false;
-
-  //State
-  StreamSubscription _stateSubscription;
-  BluetoothState state = BluetoothState.unknown;
-
-  //Device
-  BluetoothDevice device;
-  bool get isConnected => (device != null);
-  StreamSubscription deviceConnection;
-  StreamSubscription deviceStateSubscription;
-  List<BluetoothService> services = List();
-  Map<Guid, StreamSubscription> valueChangedSubscriptions = {};
-  BluetoothDeviceState deviceState = BluetoothDeviceState.disconnected;
-
-  @override
-  void initState() {
-    super.initState();
-    _flutterBlue.state.then((s) {
-      setState(() {
-        state = s;
-      });
-    });
-    _stateSubscription = _flutterBlue.onStateChanged().listen((s) {
-      setState(() {
-        state = s;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _stateSubscription?.cancel();
-    _stateSubscription = null;
-    _scanSubscription?.cancel();
-    _scanSubscription = null;
-    deviceConnection?.cancel();
-    deviceConnection = null;
-    super.dispose();
-  }
+class _ClosrBlueState extends State<ClosrBlue> {
+  double _slider2Val = 0.5;
+  bool isConnected = true;
 
   @override
   Widget build(BuildContext context) {
-    var tiles = List<Widget>();
-    if (state != BluetoothState.on) {
-      tiles.add(_buildAlertTile());
-    }
-    if (isConnected) {
-      tiles.add(_buildDeviceStateTile());
-      tiles.addAll(_buildServiceTiles());
-    } else {
-      tiles.addAll(_buildScanResultTiles());
-    }
     return MaterialApp(
-      home: Scaffold(
-        appBar:
-            AppBar(title: Text('Closr Blue'), actions: _buildActionButtons()),
-        floatingActionButton: _buildScanningButton(),
-        body: Stack(
+        home: Scaffold(
+            body: CustomScrollView(slivers: <Widget>[
+      SliverAppBar(
+        pinned: false,
+        snap: true,
+        floating: true,
+        expandedHeight: 160,
+        flexibleSpace: FlexibleSpaceBar(
+          title: Text("Closr Ble Setup"),
+        ),
+        backgroundColor: Colors.pinkAccent,
+        actions: _buildActionsButtons(),
+      ),
+      SliverFillRemaining(
+        child: Column(
           children: <Widget>[
-            (isScanning) ? _buildProgressBarTile() : Container(),
-            ListView(children: tiles),
+            Text("Checkpoints #1"),
+            Text("Checkpoints #2"),
+            Text("Checkpoints #3"),
+          ExpansionTile(
+          title: Text("Closr Body Jewelley 001"),
+          leading: Text("-45"),
+          trailing: RaisedButton(
+            child: Text("Connect"),
+            color: Colors.black,
+            textColor: Colors.white,
+            onPressed: () {
+              print("After connecting make tile disappear?");
+            },
+          ),
+          children: <Widget>[
+            _buildAdvRow(context, 'Name of value we are interested in!', '45'),
+            Divider(height: 20,),
+            Slider(
+              value: _slider2Val, //use this value as placement for intensity
+              min: 0.0,
+              max: 100.0,
+              divisions: 5,
+              label: '${_slider2Val.round()}',
+              onChanged: (double value) {
+                setState(() => _slider2Val = value);
+              },
+            ),
+            FloatingActionButton(
+              child: Icon(Icons.explicit),
+              onPressed: (){
+                print("TOUCH!!!");
+              },
+            ),
+            Divider(height: 20,)
           ],
         ),
+        ExpansionTile(title: Text("Setup pair relationship"),)
+      ]),
       ),
-    );
+    ])));
   }
 
-  Widget _buildAlertTile() {
-    return Container(
-      color: Colors.redAccent,
-      child: ListTile(
-        title: Text(
-          'Bluetooth adapter is ${state.toString().substring(15)}',
-          style: Theme.of(context).primaryTextTheme.subhead,
-        ),
-        trailing: Icon(
-          Icons.error,
-          color: Theme.of(context).primaryTextTheme.subhead.color,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDeviceStateTile() {
-    return ListTile(
-        leading: (deviceState == BluetoothDeviceState.connected)
-            ? Icon(Icons.bluetooth_connected)
-            : Icon(Icons.bluetooth_disabled),
-        title: Text('Device is ${deviceState.toString().split('.')[1]}.'),
-        subtitle: Text('${device.id}'),
-        trailing: IconButton(
-          icon: Icon(Icons.refresh),
-          onPressed: () => _refreshDeviceState(device),
-          color: Theme.of(context).iconTheme.color.withOpacity(0.5),
-        ));
-  }
-
-  List<Widget> _buildServiceTiles() {
-    return services.map((s)=> ServiceTile(
-      service: s,
-      characteristicTiles: s.characteristics.map((c) => CharacteristicTile(
-        characteristic: c,
-        onReadPressed: () => _readCharacteristic(c),
-        onWritePressed: () => _writeCharacteristic(c),
-        onNotificationPressed: () => _setNotification(c),
-        descriptorTiles: c.descriptors.map((d) => DescriptorTile(
-          descriptor:d,
-          onReadPressed: () => _readDescriptor(d),
-          onWritePressed: () => _writeDescriptor(d),
-        ),
-        ).toList(),
-      ),
-      ).toList();
-    ));
-  }
-
-  Iterable<Widget> _buildScanResultTiles() {
-    return scanResults.values.map((r)=> ScanResultTile(
-      result: r,
-      onTap: () => _connect(r.device),
-    )).toList();
-  }
-
-  _buildActionButtons() {
+  _buildActionsButtons() {
     if (isConnected) {
       return <Widget>[
-        IconButton(icon: Icon(Icons.cancel), onPressed: ()=> _disconnect(),)
+        IconButton(
+          icon: Icon(Icons.bluetooth),
+          onPressed: _disconnect,
+        )
+      ];
+    } else if (!isConnected) {
+      return <Widget>[
+        IconButton(
+          icon: Icon(Icons.bluetooth_disabled),
+          onPressed: _connect,
+        )
       ];
     }
   }
 
-  _buildScanningButton() {
-    if (isConnected || state != BluetoothState.on){
-      return null;
-    }
-    if (isScanning) {
-      return FloatingActionButton(
-        child: Icon(Icons.stop),
-        onPressed: _stopScan,
-        backgroundColor: Colors.red,
-      );
-    } else {
-      return FloatingActionButton(
-        child: Icon(Icons.search), onPressed: _startScan
-      );
-    }
+  _connect() {
+    print("click to connect to bluetooth device");
   }
 
-  _buildProgressBarTile() {
-    return LinearProgressIndicator();
+  _disconnect() {
+    print("click to disconnect bluetooth device");
+  }
+
+  _buildAdvRow(BuildContext context, String title, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: Theme.of(context).textTheme.caption,
+          ),
+          SizedBox(
+            width: 12.0,
+          ),
+          Expanded(
+              child: Text(
+            value,
+            style:
+                Theme.of(context).textTheme.caption.apply(color: Colors.black),
+            softWrap: true,
+          ))
+        ],
+      ),
+    );
   }
 }
